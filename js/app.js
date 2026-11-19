@@ -26,6 +26,7 @@
     : (m < 1e6 ? num(m / 1000, 1) : Math.round(m / 1000)) + ' ' + T.units.km;
   const fmtSpeed = (v) => v < 1000 ? Math.round(v) + ' ' + T.units.ms : num(v / 1000, 2) + ' ' + T.units.kms;
   const fmtTime = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  const fmtClock = (s) => [s / 3600, (s / 60) % 60, s % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
   const fmtT = (kg) => num(kg / 1000, kg < 10000 ? 1 : 0);
   const fill = (s, o) => s.replace(/\{(\w+)\}/g, (_, k) => o[k]);
 
@@ -170,7 +171,7 @@
       ctx.save();
       ctx.translate(W / 2 + Math.sin(t * 0.7) * 6, H * 0.27 + Math.sin(t * 1.1) * 8);
       ctx.rotate(Math.sin(t * 0.7) * 0.04); ctx.scale(s, s); ctx.translate(0, hh / 2);
-      Draw.rocket(ctx, HOME_ROCKET, { fire: true });
+      Draw.rocket(ctx, HOME_ROCKET, { fire: true, atm: 1 });
       ctx.restore();
     })(t0);
   }
@@ -181,7 +182,7 @@
     $('missionList').innerHTML = T.missionList.map((m, i) => {
       const open = isOpen(i), n = save.stars[m.id] || 0;
       return '<button class="mission' + (open ? '' : ' locked') + '" data-m="' + m.id + '">' +
-        '<span class="num">' + (i + 1) + '</span>' +
+        '<span class="num">' + String(i + 1).padStart(2, '0') + '</span>' +
         '<span><b>' + m.name + '</b><small>' + (open ? m.goal : T.locked) + '</small></span>' +
         '<span class="st">' + '★'.repeat(n) + '<i>' + '★'.repeat(3 - n) + '</i></span></button>';
     }).join('');
@@ -306,6 +307,7 @@
     Draw.fx.clear();
     $('count').textContent = '';
     $('btnSound').classList.toggle('off', save.mute);
+    $('lblSpeed').textContent = T.speed; $('lblAlt').textContent = T.alt; $('lblFuel').textContent = T.fuel;
     toast(mission ? mText().goal : '', 3500);
     stopLoop();
     fl.raf = requestAnimationFrame(frame);
@@ -426,14 +428,15 @@
       W, H, h, phi: Math.PI / 2 - Math.atan2(sim.y, sim.x), tilt, cfg, fire, bfire,
       chute: sim.chute, scale, rocketH, rocketH0: fl.h0, debris: fl.debris, marks: T.marks, time: fl.time,
       vr: sim.vx * up[0] + sim.vy * up[1], vh: sim.vx * up[1] - sim.vy * up[0],
-      shake: fl.shake + (fire || bfire ? 2.2 * atm : 0), hide: fl.hide
+      shake: fl.shake + (fire || bfire ? 2.2 * atm : 0), hide: fl.hide, atm: Math.exp(-Math.max(0, h) / 30000)
     });
     fl.gy = out.gy; fl.cx = out.cx;
     const showOrbit = h > 30e3;
-    if (showOrbit) Draw.minimap(ctx, W - 54, 150, 72, sim);
+    if (showOrbit) Draw.minimap(ctx, W / 2, 168, 76, sim);
 
     $('hudAlt').textContent = fmtAlt(h);
     $('hudSpeed').textContent = fmtSpeed(sim.speed());
+    $('hudClock').textContent = sim.launched ? 'T+ ' + fmtClock(sim.t) : 'T− ' + fmtClock(Math.max(0, fl.count));
     $('hudFuel').style.width = (sim.fuelFrac() * 100).toFixed(1) + '%';
     let ol = '';
     if (showOrbit) {

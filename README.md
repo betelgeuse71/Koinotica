@@ -29,3 +29,13 @@ Telegramda:
 3. `js/app.js` ichidagi `CONFIG.shareUrl` ga mini-ilova havolasini yozing — «Doʻstlarga ulashish» tugmasi shu havolani yuboradi.
 
 Natijalar `localStorage` va Telegram `CloudStorage` da saqlanadi.
+
+## Grafika: tayyor rasmlarni ulash
+
+Hozir barcha grafika kod bilan chiziladi. Realistik PNG rasmlar (masalan, ChatGPT'da yaratilgan) boʻlsa, ularni `assets/` papkasiga qoʻying va `js/sprites.js` dagi `window.SPRITES` ga yozing — vektor oʻrniga rasm chiziladi. Kalitlar roʻyxati shu faylda.
+
+Talablar: shaffof fon, qatʼiy yon koʻrinish (ortografik), yorugʻlik chapdan, qism rasmning butun maydonini egallaydi (chetida boʻsh joy yoʻq), barcha rasmlar bir xil uslubda.
+
+ChatGPT uchun namuna soʻrov (har bir qism uchun `<...>` ni almashtiring):
+
+> Photorealistic orthographic side view of `<a white cylindrical first-stage rocket fuel tank with black interstage band, panel seams and a thin cable raceway>`, in the style of SpaceX Falcon 9 / NASA hardware. Studio lighting from the left, soft shadow on the right side. No text, no logos, no flags. Perfectly vertical, symmetric, fills the whole frame edge to edge, transparent background, PNG.

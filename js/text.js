@@ -37,6 +37,7 @@ window.T = {
   hintOrbitOk: 'Tezlik zaxirasi orbitaga yetadi.',
   hintOk: 'Raketa uchishga tayyor.',
 
+  speed: 'Tezlik', alt: 'Balandlik', fuel: 'Yoqilgʻi',
   orbitLine: 'Apogey {ap} · Perigey {pe}',
   start: 'Start', stageBtn: 'Bosqichni ajratish', payloadBtn: 'Yukni ajratish',
   engine: 'Dvigatel',
