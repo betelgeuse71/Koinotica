@@ -6,10 +6,9 @@
     shareUrl: ''
   };
 
-  const { Sim, stats, PARTS, RE, KARMAN } = Physics;
+  const { Sim, stats, PARTS, KARMAN } = Physics;
   const $ = (id) => document.getElementById(id);
-  const tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData !== undefined
-    ? window.Telegram.WebApp : null;
+  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const inTg = !!(tg && tg.platform && tg.platform !== 'unknown');
 
   const MISSIONS = {
@@ -32,7 +31,7 @@
 
   /* ---------- saqlash ---------- */
   const KEY = 'koinotika_v1';
-  let save = { stars: {}, design: null };
+  let save = { stars: {}, design: null, mute: false };
   try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* bo'sh */ }
   const cloud = inTg && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9') ? tg.CloudStorage : null;
   function persist() {
@@ -45,8 +44,7 @@
     try {
       const c = JSON.parse(val);
       for (const k in c.stars || {}) save.stars[k] = Math.max(save.stars[k] || 0, c.stars[k]);
-      if (!save.design && c.design) save.design = c.design;
-      renderMissions();
+      if (current === 'missions') renderMissions();
     } catch (e) { /* buzilgan yozuv */ }
   });
 
@@ -56,9 +54,40 @@
     else tg.HapticFeedback.notificationOccurred(v);
   };
 
+  /* ---------- ovoz (WebAudio, fayllarsiz) ---------- */
+  const Sound = {
+    ac: null,
+    init() {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (this.ac || !C) return;
+      const ac = this.ac = new C();
+      const buf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+      this.filter = ac.createBiquadFilter(); this.filter.type = 'lowpass'; this.filter.frequency.value = 300;
+      this.gain = ac.createGain(); this.gain.gain.value = 0;
+      src.connect(this.filter); this.filter.connect(this.gain); this.gain.connect(ac.destination); src.start();
+    },
+    engine(level, freq) {
+      if (!this.ac) return;
+      const t = this.ac.currentTime;
+      this.gain.gain.setTargetAtTime(save.mute ? 0 : level, t, 0.1);
+      this.filter.frequency.setTargetAtTime(freq || 300, t, 0.3);
+    },
+    beep(f, dur, delay) {
+      if (!this.ac || save.mute) return;
+      const ac = this.ac, t = ac.currentTime + (delay || 0);
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.05);
+    },
+    chord(list) { list.forEach((f, i) => this.beep(f, 0.35, i * 0.12)); }
+  };
+
   /* ---------- ekranlar ---------- */
   let current = 'home';
-  const parents = { missions: 'home', hangar: 'missions', flight: 'hangar' };
   let mission = null; // joriy vazifa id yoki null (erkin parvoz)
 
   function show(id) {
@@ -67,17 +96,15 @@
     if (inTg && tg.BackButton) id === 'home' ? tg.BackButton.hide() : tg.BackButton.show();
     if (id === 'missions') renderMissions();
     if (id === 'hangar') openHangar();
-    resizeAll();
   }
   function back() {
-    if ($('modal').classList.contains('on') && current !== 'flight') return closeModal();
     if (current === 'flight') return abortFlight();
+    if ($('modal').classList.contains('on')) return closeModal();
     if (current === 'hangar') return show(mission ? 'missions' : 'home');
-    show(parents[current] || 'home');
+    show('home');
   }
   document.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', back));
 
-  /* ---------- canvas ---------- */
   function fit(canvas) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -88,10 +115,9 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     return { ctx, W: w, H: h };
   }
-  function resizeAll() { if (current === 'hangar') drawPreview(); }
-  window.addEventListener('resize', resizeAll);
+  window.addEventListener('resize', () => { if (current === 'hangar') drawPreview(); });
 
-  /* ---------- modal ---------- */
+  /* ---------- oyna ---------- */
   function openModal(html) { $('modalCard').innerHTML = html; $('modal').classList.add('on'); }
   function closeModal() { $('modal').classList.remove('on'); }
   $('modalCard').addEventListener('click', (e) => {
@@ -117,42 +143,47 @@
   };
 
   /* ---------- bosh sahifa ---------- */
+  const HOME_ROCKET = { payload: 'sat', s1: { tank: 'm', engine: 'burgut' }, s2: { tank: 's', engine: 'yulduz' }, boosters: 0 };
   function initHome() {
     const user = inTg && tg.initDataUnsafe && tg.initDataUnsafe.user;
     $('homeHello').textContent = (user && user.first_name ? fill(T.hello, { name: user.first_name }) + ' ' : '') + T.tagline;
-    $('btnMissions').textContent = T.missions;
+    $('btnPlay').textContent = T.play;
     $('btnFree').textContent = T.freeFlight;
     $('btnHelp').textContent = T.howTo;
     $('missionsTitle').textContent = T.missions;
-    $('btnMissions').onclick = () => show('missions');
+    $('btnPlay').onclick = () => show('missions');
     $('btnFree').onclick = () => { mission = null; show('hangar'); };
     $('btnHelp').onclick = () => openModal(
       '<h2>' + T.howTo + '</h2>' +
-      T.help.map((h) => '<div class="help-item"><i>' + h[0] + '</i><div><b>' + h[1] + '</b>' + h[2] + '</div></div>').join('') +
+      T.help.map((h, i) => '<div class="help-item"><i>' + (i + 1) + '</i><div><b>' + h[0] + '</b>' + h[1] + '</div></div>').join('') +
       '<p class="note">' + T.helpNote + '</p><button class="btn primary" data-act="close">' + T.ok + '</button>');
-    let t0 = performance.now();
+    const t0 = performance.now();
+    const hh = Draw.layout(HOME_ROCKET).h;
     (function loop(now) {
       requestAnimationFrame(loop);
       if (current !== 'home') return;
       const { ctx, W, H } = fit($('homeCanvas'));
-      const g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, '#03050f'); g.addColorStop(1, '#101a4a');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      Draw.stars(ctx, W, H, 1, (now - t0) / 90);
-      Draw.earth(ctx, W, H * 0.86, W * 1.8, 200e3);
+      const t = (now - t0) / 1000;
+      ctx.fillStyle = '#08090f'; ctx.fillRect(0, 0, W, H);
+      Draw.stars(ctx, W, H, 1, 0, t * 60, t);
+      const s = Math.min(1.4, H * 0.22 / hh);
+      ctx.save();
+      ctx.translate(W / 2 + Math.sin(t * 0.7) * 6, H * 0.27 + Math.sin(t * 1.1) * 8);
+      ctx.rotate(Math.sin(t * 0.7) * 0.04); ctx.scale(s, s); ctx.translate(0, hh / 2);
+      Draw.rocket(ctx, HOME_ROCKET, { fire: true });
+      ctx.restore();
     })(t0);
   }
 
   /* ---------- vazifalar ---------- */
-  const starStr = (n) => '★'.repeat(n) + '☆'.repeat(3 - n);
   function isOpen(i) { return i === 0 || (save.stars[T.missionList[i - 1].id] || 0) > 0; }
   function renderMissions() {
     $('missionList').innerHTML = T.missionList.map((m, i) => {
-      const open = isOpen(i);
+      const open = isOpen(i), n = save.stars[m.id] || 0;
       return '<button class="mission' + (open ? '' : ' locked') + '" data-m="' + m.id + '">' +
-        '<span class="num">' + (open ? i + 1 : '🔒') + '</span>' +
+        '<span class="num">' + (i + 1) + '</span>' +
         '<span><b>' + m.name + '</b><small>' + (open ? m.goal : T.locked) + '</small></span>' +
-        '<span class="st">' + starStr(save.stars[m.id] || 0) + '</span></button>';
+        '<span class="st">' + '★'.repeat(n) + '<i>' + '★'.repeat(3 - n) + '</i></span></button>';
     }).join('');
   }
   $('missionList').addEventListener('click', (e) => {
@@ -163,7 +194,7 @@
 
   /* ---------- angar ---------- */
   let design = save.design || { payload: 'sat', s1: { tank: 's', engine: 'chaqmoq' }, s2: null, boosters: 0 };
-  let tab = 's1';
+  let tab = 's1', useAp = true;
   const mDef = () => (mission ? MISSIONS[mission] : null);
   const mText = () => T.missionList.find((m) => m.id === mission);
 
@@ -173,7 +204,7 @@
     $('hangarTitle').textContent = mission ? mText().name : T.freeFlight;
     $('hangarGoal').textContent = mission ? mText().goal : T.freeGoal;
     $('lblMass').textContent = T.mass; $('lblTwr').textContent = T.twr; $('lblDv').textContent = T.dv;
-    $('apLabel').textContent = T.autopilot;
+    $('apToggle').textContent = T.autopilot; $('apToggle').classList.toggle('on', useAp);
     $('btnToPad').textContent = T.toPad;
     $('tabs').innerHTML = ['payload', 's2', 's1', 'boosters'].map((k) =>
       '<button data-tab="' + k + '" class="' + (k === tab ? 'on' : '') + '">' + T.tabs[k] + '</button>').join('');
@@ -183,33 +214,34 @@
     const b = e.target.closest('[data-tab]'); if (!b) return;
     tab = b.dataset.tab; openHangar();
   });
+  $('apToggle').onclick = () => { useAp = !useAp; $('apToggle').classList.toggle('on', useAp); haptic('impact', 'light'); };
 
-  const opt = (key, val, on, title, lines, disabled) =>
+  const opt = (key, val, on, title, line, disabled) =>
     '<button class="opt' + (on ? ' on' : '') + '" data-k="' + key + '" data-v="' + val + '"' + (disabled ? ' disabled' : '') + '>' +
-    '<b>' + title + '</b>' + lines.filter(Boolean).join('<br>') + '</button>';
+    '<b>' + title + '</b>' + (line || '') + '</button>';
+  const row = (items) => '<div class="opt-row">' + items.join('') + '</div>';
+  const note = (s) => '<p class="note">' + s + '</p>';
 
   function renderOptions() {
-    let h = '';
-    const tankRow = (key, set, cur) => '<h3>' + T.tank + '</h3><div class="opt-row">' +
-      Object.keys(set).map((id) => opt(key, id, cur === id, T.parts['t_' + id].name,
-        [fill(T.fuelAmount, { v: fmtT(set[id].fuel) })])).join('') + '</div>';
-    const engRow = (key, set, cur) => '<h3>' + T.engine + '</h3><div class="opt-row">' +
-      Object.keys(set).map((id) => opt(key, id, cur === id, T.parts[id].name,
-        [fill(T.thrustAmount, { v: set[id].thrust / 1000 }), fill(T.ispAmount, { v: set[id].isp })])).join('') + '</div>';
+    const U = T.units;
+    const tankRow = (key, set, cur) => row(Object.keys(set).map((id) =>
+      opt(key, id, cur === id, T.parts['t_' + id], fmtT(set[id].fuel) + ' ' + U.t)));
+    const engRow = (key, set, cur) => row(Object.keys(set).map((id) =>
+      opt(key, id, cur === id, T.parts[id], set[id].thrust / 1000 + ' ' + U.kn + ' · ' + set[id].isp + ' ' + U.s)));
+    let h;
     if (tab === 'payload') {
       const lock = mDef() && mDef().payload;
-      h = '<div class="opt-row">' + Object.keys(PARTS.payload).map((id) => opt('payload', id, design.payload === id,
-        T.parts[id].name, [fill(T.massAmount, { v: fmtT(PARTS.payload[id].mass) }), T.parts[id].desc], lock && lock !== id)).join('') + '</div>' +
-        (lock ? '<p class="note">' + T.payloadLocked + '</p>' : '');
+      h = row(Object.keys(PARTS.payload).map((id) => opt('payload', id, design.payload === id, T.parts[id],
+        fmtT(PARTS.payload[id].mass) + ' ' + U.t + (PARTS.payload[id].chute ? ' · ' + T.chute : ''), lock && lock !== id))) +
+        (lock ? note(T.payloadLocked) : '');
     } else if (tab === 's1') {
-      h = tankRow('s1.tank', PARTS.tank1, design.s1.tank) + engRow('s1.engine', PARTS.engine1, design.s1.engine);
+      h = tankRow('s1.tank', PARTS.tank1, design.s1.tank) + engRow('s1.engine', PARTS.engine1, design.s1.engine) + note(T.engineLegend);
     } else if (tab === 's2') {
-      h = '<div class="opt-row">' + opt('s2', 'off', !design.s2, T.parts.noS2.name, [T.parts.noS2.desc]) +
-        opt('s2', 'on', !!design.s2, T.parts.withS2.name, [T.parts.withS2.desc]) + '</div>';
-      if (design.s2) h += tankRow('s2.tank', PARTS.tank2, design.s2.tank) + engRow('s2.engine', PARTS.engine2, design.s2.engine);
+      h = row([opt('s2', 'off', !design.s2, T.parts.noS2), opt('s2', 'on', !!design.s2, T.parts.withS2)]);
+      h += design.s2 ? tankRow('s2.tank', PARTS.tank2, design.s2.tank) + engRow('s2.engine', PARTS.engine2, design.s2.engine) : note(T.s2Note);
     } else {
-      h = '<div class="opt-row">' + [0, 2, 4].map((n) => opt('boosters', n, design.boosters === n,
-        T.parts['b' + n].name, [T.parts['b' + n].desc])).join('') + '</div><p class="note">' + T.boostersNote + '</p>';
+      h = row([0, 2, 4].map((n) => opt('boosters', n, design.boosters === n, T.parts['b' + n],
+        n ? '+' + n * PARTS.booster.thrust / 1000 + ' ' + U.kn : ''))) + note(T.boostersNote);
     }
     $('options').innerHTML = h;
   }
@@ -235,23 +267,24 @@
     $('stDv').className = orbitGoal && st.dv >= 9300 ? 'good' : '';
     $('hangarHint').textContent = st.twr < 1 ? T.hintHeavy : st.twr < 1.2 ? T.hintLowTwr
       : orbitGoal ? (st.dv >= 9300 ? T.hintOrbitOk : T.hintOrbitNo) : T.hintOk;
+    $('hangarHint').classList.toggle('bad', st.twr < 1);
     drawPreview();
   }
   function drawPreview() {
     const { ctx, W, H } = fit($('previewCanvas'));
     ctx.clearRect(0, 0, W, H);
     const L = Draw.layout(design);
-    const s = Math.min((H - 24) / (L.h + 6), 2.2, (W - 150) / 90);
-    ctx.save();
-    ctx.translate(Math.max(60, (W - 140) / 2), H - 12); ctx.scale(s, s);
+    const s = Math.min((H - 28) / (L.h + 4), 2.4);
+    ctx.save(); ctx.translate(W / 2, H - 14); ctx.scale(s, s);
     Draw.rocket(ctx, design, {});
     ctx.restore();
   }
-  $('btnToPad').onclick = () => { haptic('impact', 'medium'); show('flight'); startFlight(); };
+  $('btnToPad').onclick = () => { haptic('impact', 'medium'); Sound.init(); show('flight'); startFlight(); };
 
   /* ---------- parvoz ---------- */
   const WARPS = [1, 2, 5, 20, 50];
-  const fl = { sim: null, raf: 0, last: 0, paused: false, warp: 0, debris: [], goalDone: false, usedAp: false, hinted: false, ended: false };
+  const STEP = 0.7; // sanoq qadami, s
+  const fl = { sim: null, raf: 0 };
 
   function simCfg(sim) {
     const s1 = sim.stages.find((s) => s.kind === 1), s2 = sim.stages.find((s) => s.kind === 2);
@@ -265,18 +298,19 @@
 
   function startFlight() {
     const d = mDef();
-    const ap = $('apCheck').checked;
-    fl.sim = new Sim(JSON.parse(JSON.stringify(design)), { autopilot: ap, apMode: !d || d.type === 'orbit' ? 'orbit' : 'up' });
-    Object.assign(fl, { paused: false, warp: 0, debris: [], goalDone: false, usedAp: ap, hinted: false, ended: false, last: 0 });
-    fl.h0 = Draw.layout(design).h;
-    $('lblAlt').textContent = T.alt; $('lblSpeed').textContent = T.speed; $('lblFuel').textContent = T.fuel;
-    $('goalChip').textContent = mission ? mText().goal : '';
-    $('hudOrbit').classList.remove('on');
-    toast('');
+    fl.sim = new Sim(JSON.parse(JSON.stringify(design)), { autopilot: useAp, apMode: !d || d.type === 'orbit' ? 'orbit' : 'up' });
+    Object.assign(fl, {
+      paused: false, ended: false, warp: 0, debris: [], goalDone: false, usedAp: useAp, hinted: false, quiet: false,
+      last: 0, time: 0, count: 0, shake: 0, gy: 9999, hide: false, h0: Draw.layout(design).h
+    });
+    Draw.fx.clear();
+    $('count').textContent = '';
+    $('btnSound').classList.toggle('off', save.mute);
+    toast(mission ? mText().goal : '', 3500);
     stopLoop();
     fl.raf = requestAnimationFrame(frame);
   }
-  function stopLoop() { cancelAnimationFrame(fl.raf); fl.raf = 0; }
+  function stopLoop() { cancelAnimationFrame(fl.raf); fl.raf = 0; Sound.engine(0); }
 
   let toastTimer = 0;
   function toast(msg, ms) {
@@ -287,21 +321,34 @@
     toastTimer = setTimeout(() => el.classList.remove('on'), ms || 2200);
   }
 
+  function setCount(n) {
+    const el = $('count');
+    el.textContent = n || '';
+    el.classList.remove('tick'); void el.offsetWidth; if (n) el.classList.add('tick');
+    if (n) { Sound.beep(440, 0.15); haptic('impact', 'light'); }
+  }
+
   function handleEvents() {
     const sim = fl.sim;
     for (const e of sim.events) {
       const type = e.type || e;
       if (type === 'stage_sep') {
-        const st = e.stage;
-        const cfg = { payload: null, s1: null, s2: null, boosters: 0 };
+        const st = e.stage, cfg = { payload: null, s1: null, s2: null, boosters: 0 };
         cfg[st.kind === 1 ? 's1' : 's2'] = { tank: st.tank, engine: st.engine };
         fl.debris.push({ cfg, hh: Draw.layout(cfg).h, x: 0, y: 30, vx: (Math.random() - 0.5) * 30, vy: 70, rot: sim.tilt(), vr: (Math.random() - 0.5) * 1.5, life: 3 });
-        toast(T.toast.stage_sep); haptic('impact', 'heavy');
+        toast(T.toast.stage_sep); haptic('impact', 'heavy'); Sound.beep(180, 0.2); fl.shake = 6;
       } else if (type === 'fuel_out') {
         toast(sim.autopilot ? T.toast.fuel_out : T.toast.fuel_out_stage, 3000);
-      } else if (type === 'liftoff') { toast(T.toast.liftoff); haptic('impact', 'heavy'); }
-      else if (type === 'landed' || type === 'crashed') { haptic('notify', type === 'landed' ? 'success' : 'error'); }
-      else if (T.toast[type]) { toast(T.toast[type], type === 'karman' || type === 'orbit' ? 3200 : 2200); haptic('impact', 'medium'); }
+      } else if (type === 'liftoff') {
+        toast(T.toast.liftoff); haptic('impact', 'heavy'); fl.shake = 10;
+      } else if (type === 'crashed') {
+        fl.hide = true; fl.shake = 18; Draw.fx.burst(fl.cx, fl.gy); Sound.beep(70, 0.6); haptic('notify', 'error');
+      } else if (type === 'landed') { haptic('notify', 'success'); }
+      else if (T.toast[type]) {
+        toast(T.toast[type], type === 'karman' || type === 'orbit' ? 3200 : 2200); haptic('impact', 'medium');
+        if (type === 'booster_sep') fl.shake = 5;
+        if (type === 'karman' || type === 'orbit') Sound.chord([660, 880]);
+      }
     }
     sim.events.length = 0;
   }
@@ -318,7 +365,18 @@
     fl.raf = requestAnimationFrame(frame);
     const sim = fl.sim;
     const dtReal = Math.min(0.05, fl.last ? (now - fl.last) / 1000 : 0.016);
-    fl.last = now;
+    fl.last = now; fl.time += dtReal;
+    fl.shake *= Math.pow(0.02, dtReal);
+    Draw.fx.update(dtReal, fl.gy);
+
+    if (fl.count > 0) { // 3 · 2 · 1
+      const before = Math.ceil(fl.count / STEP);
+      fl.count -= dtReal;
+      const after = Math.ceil(fl.count / STEP);
+      if (after !== before) setCount(after > 0 ? after : 0);
+      if (fl.count <= 0) { sim.ignite(); Sound.beep(880, 0.4); }
+    }
+
     if (!fl.paused && !fl.ended) {
       const warp = WARPS[fl.warp];
       sim._warp = warp;
@@ -327,16 +385,13 @@
       for (const d of fl.debris) { d.x += d.vx * dtReal; d.y += d.vy * dtReal; d.vy += 60 * dtReal; d.rot += d.vr * dtReal; d.life -= dtReal; }
       fl.debris = fl.debris.filter((d) => d.life > 0);
       handleEvents();
-      if (!sim.autopilot && sim.liftoff && !fl.hinted && sim.alt() > 300) { fl.hinted = true; toast(T.toast.tiltHint, 4000); }
+      const h = sim.alt();
+      if (!sim.autopilot && sim.liftoff && !fl.hinted && h > 300) { fl.hinted = true; toast(T.toast.tiltHint, 4000); }
+      if (!fl.quiet && h > 130e3) { fl.quiet = true; toast(T.toast.quiet, 3200); }
 
-      if (!fl.goalDone && goalReached()) {
-        fl.goalDone = true;
-        finish(true, sim.done ? null : 'resume');
-      } else if (sim.done) {
-        finish(false);
-      } else if (sim.launched && !sim.liftoff && sim.t > 4) {
-        finish(false, null, 'nolift');
-      }
+      if (!fl.goalDone && goalReached()) { fl.goalDone = true; finish(true, sim.done ? null : 'resume'); }
+      else if (sim.done) finish(false);
+      else if (sim.launched && !sim.liftoff && sim.t > 4) finish(false, null, 'nolift');
     }
     render();
   }
@@ -344,40 +399,58 @@
   function render() {
     const sim = fl.sim;
     const { ctx, W, H } = fit($('flightCanvas'));
-    const h = sim.alt();
-    const cfg = simCfg(sim);
-    const s0 = sim.stages[0];
+    const h = sim.alt(), r = h + Physics.RE;
+    const cfg = simCfg(sim), s0 = sim.stages[0];
+    const live = !fl.ended && !fl.paused && !sim.done;
+    const fire = !!(s0 && sim.engineOn && s0.fuel > 0 && live);
+    const bfire = !!(s0 && s0.boosters && s0.bFuel > 0 && sim.launched && live);
+    const atm = Math.exp(-Math.max(0, h) / 20000);
     let tilt = sim.tilt();
     while (tilt > Math.PI) tilt -= 2 * Math.PI;
     while (tilt < -Math.PI) tilt += 2 * Math.PI;
-    Draw.scene(ctx, {
-      W, H, h, phi: Math.PI / 2 - Math.atan2(sim.y, sim.x), tilt, cfg,
-      fire: !!(s0 && sim.engineOn && s0.fuel > 0 && !sim.done),
-      bfire: !!(s0 && s0.boosters && s0.bFuel > 0 && sim.launched && !sim.done),
-      chute: sim.chute, scale: Math.max(0.6, Math.min(1.8, H * 0.3 / fl.h0)),
-      rocketH: Draw.layout(cfg).h, rocketH0: fl.h0, debris: fl.debris
+    const up = [sim.x / r, sim.y / r];
+    const scale = Math.max(0.6, Math.min(1.8, H * 0.3 / fl.h0));
+    const rocketH = Draw.layout(cfg).h;
+
+    // tutun: dvigatel ishlaganda, quyi atmosferada
+    if ((fire || bfire) && h < 5000) {
+      const ex = -Math.sin(tilt), ey = Math.cos(tilt), d = rocketH / 2 * scale;
+      for (let i = 0; i < 2; i++) {
+        const v = 260 + Math.random() * 200;
+        Draw.fx.smoke(W / 2 + ex * d, H * 0.5 + ey * d, ex * v + (Math.random() - 0.5) * 90, ey * v + (Math.random() - 0.5) * 60);
+      }
+    }
+    Sound.engine(fire || bfire ? 0.04 + 0.3 * atm : 0, 180 + 500 * atm);
+
+    const out = Draw.scene(ctx, {
+      W, H, h, phi: Math.PI / 2 - Math.atan2(sim.y, sim.x), tilt, cfg, fire, bfire,
+      chute: sim.chute, scale, rocketH, rocketH0: fl.h0, debris: fl.debris, marks: T.marks, time: fl.time,
+      vr: sim.vx * up[0] + sim.vy * up[1], vh: sim.vx * up[1] - sim.vy * up[0],
+      shake: fl.shake + (fire || bfire ? 2.2 * atm : 0), hide: fl.hide
     });
-    if (h > 30e3) Draw.minimap(ctx, W - 122, 74, 110, sim);
+    fl.gy = out.gy; fl.cx = out.cx;
+    const showOrbit = h > 30e3;
+    if (showOrbit) Draw.minimap(ctx, W - 54, 150, 72, sim);
 
     $('hudAlt').textContent = fmtAlt(h);
     $('hudSpeed').textContent = fmtSpeed(sim.speed());
     $('hudFuel').style.width = (sim.fuelFrac() * 100).toFixed(1) + '%';
-    const showOrbit = h > 30e3;
-    $('hudOrbit').classList.toggle('on', showOrbit);
+    let ol = '';
     if (showOrbit) {
       const o = sim.orbit();
-      $('hudAp').textContent = fill(T.apogee, { v: isFinite(o.ap) ? fmtAlt(o.ap) : '∞' });
-      $('hudPe').textContent = fill(T.perigee, { v: o.pe > 0 ? fmtAlt(o.pe) : '—' });
+      ol = fill(T.orbitLine, { ap: isFinite(o.ap) ? fmtAlt(o.ap) : '∞', pe: o.pe > 0 ? fmtAlt(o.pe) : '—' });
     }
+    $('hudOrbit').textContent = ol;
+
     const main = $('btnMain');
     main.textContent = !sim.launched ? T.start : sim.stages.length > 1 ? T.stageBtn : T.payloadBtn;
-    main.disabled = sim.launched && (!sim.stages.length || sim.autopilot);
-    main.classList.toggle('pulse', !sim.launched || (!sim.autopilot && !!s0 && s0.fuel <= 0 && !s0.boosters));
-    $('btnEngine').textContent = sim.engineOn ? T.engineOn : T.engineOff;
+    main.disabled = fl.count > 0 || (sim.launched && (!sim.stages.length || sim.autopilot));
+    main.classList.toggle('pulse', !main.disabled && (!sim.launched || (!!s0 && s0.fuel <= 0 && !s0.boosters)));
+    $('btnEngine').textContent = T.engine;
     $('btnEngine').classList.toggle('on', sim.engineOn);
-    $('btnAp').textContent = sim.autopilot ? T.apOn : T.apOff;
+    $('btnAp').textContent = T.autopilot;
     $('btnAp').classList.toggle('on', sim.autopilot);
-    $('btnWarp').textContent = fill(T.warp, { v: WARPS[fl.warp] });
+    $('btnWarp').textContent = '×' + WARPS[fl.warp];
     $('btnLeft').disabled = $('btnRight').disabled = sim.autopilot;
   }
 
@@ -394,48 +467,51 @@
   function finish(win, mode, code) {
     const sim = fl.sim, d = mDef();
     if (mode === 'resume') fl.paused = true; else fl.ended = true;
+    fl.count = 0; $('count').textContent = '';
     let html = '';
     const btn = (act, label, cls) => '<button class="btn ' + (cls || '') + '" data-act="' + act + '">' + label + '</button>';
     if (win) {
-      const mass = stats(design).mass;
-      const got = [true, !fl.usedAp, mass <= d.massLimit * 1000];
+      const got = [true, !fl.usedAp, stats(design).mass <= d.massLimit * 1000];
       const n = got.filter(Boolean).length;
       if (n > (save.stars[mission] || 0)) { save.stars[mission] = n; persist(); }
       haptic('notify', 'success');
-      html += '<h2>🎉 ' + T.resultWin + '</h2><div class="big-stars">' +
-        '★'.repeat(n) + '<span class="off">' + '★'.repeat(3 - n) + '</span></div><div class="star-list">' +
+      html += '<div class="big-stars">' + got.map((g, i) => '<span class="' + (i < n ? 'got' : '') + '">★</span>').join('') + '</div>' +
+        '<h2>' + T.resultWin + '</h2><div class="star-list">' +
         T.stars.map((s, i) => '<span class="' + (got[i] ? '' : 'no') + '">' + (got[i] ? '★ ' : '☆ ') + fill(s, { v: d.massLimit }) + '</span>').join('') + '</div>';
     } else {
       const free = !d || fl.goalDone;
-      if (!free) haptic('notify', 'error');
+      if (!free && sim.done !== 'crashed') haptic('notify', 'error');
       const r = fl.goalDone ? '' : failReason(code);
-      html += '<h2>' + (free ? T.resultFree : '😕 ' + T.resultFail) + '</h2>' + (r ? '<p class="reason">' + r + '</p>' : '');
+      html += '<h2>' + (free ? T.resultFree : T.resultFail) + '</h2>' + (r ? '<p class="reason">' + r + '</p>' : '');
     }
-    html += '<div class="res-grid"><div><span>' + T.maxAlt + '</span><b>' + fmtAlt(sim.maxAlt) + '</b></div>' +
-      '<div><span>' + T.maxSpeed + '</span><b>' + fmtSpeed(sim.maxSpeed) + '</b></div>' +
-      '<div><span>' + T.flightTime + '</span><b>' + fmtTime(sim.t) + '</b></div></div>';
-    html += '<div class="fact"><b>' + T.didYouKnow + '</b>' + T.facts[Math.floor(Math.random() * T.facts.length)] + '</div>';
+    html += '<div class="res-grid"><div><b>' + fmtAlt(sim.maxAlt) + '</b><span>' + T.maxAlt + '</span></div>' +
+      '<div><b>' + fmtSpeed(sim.maxSpeed) + '</b><span>' + T.maxSpeed + '</span></div>' +
+      '<div><b>' + fmtTime(sim.t) + '</b><span>' + T.flightTime + '</span></div></div>';
+    html += '<div class="fact">' + T.facts[Math.floor(Math.random() * T.facts.length)] + '</div>';
     const i = T.missionList.findIndex((m) => m.id === mission);
     if (win && i < T.missionList.length - 1) html += btn('next', T.next, 'primary');
+    if (win && i === T.missionList.length - 1) html += btn('missions', T.toMissions, 'primary');
     if (!win) html += btn('retry', T.retry, 'primary');
     if (mode === 'resume') html += btn('resume', T.resume);
-    html += btn('hangar', T.toHangar);
-    if (win && i === T.missionList.length - 1) html += btn('missions', T.toMissions);
-    if ((inTg && CONFIG.shareUrl) || navigator.share) html += btn('share', T.share, 'ghost');
-    setTimeout(() => openModal(html), win || code ? 600 : 1200);
+    html += btn('hangar', T.toHangar, mode === 'resume' ? 'text' : '');
+    if ((inTg && CONFIG.shareUrl) || navigator.share) html += btn('share', T.share, 'text');
+    setTimeout(() => {
+      openModal(html);
+      if (win) Sound.chord([523, 659, 784, 1047]);
+    }, sim.done === 'crashed' ? 1400 : 600);
   }
 
   function abortFlight() {
     if ($('modal').classList.contains('on')) return;
     if (!fl.sim || !fl.sim.launched) { stopLoop(); return show('hangar'); }
-    if (fl.ended) return;
-    finish(false);
+    if (!fl.ended) finish(false);
   }
   $('btnAbort').onclick = abortFlight;
 
   $('btnMain').onclick = () => {
-    const sim = fl.sim; if (!sim || fl.ended) return;
-    if (!sim.launched) { sim.ignite(); haptic('impact', 'heavy'); }
+    const sim = fl.sim; if (!sim || fl.ended || fl.count > 0) return;
+    Sound.init();
+    if (!sim.launched) { toast(''); fl.count = STEP * 3; setCount(3); }
     else sim.stage();
   };
   $('btnEngine').onclick = () => fl.sim && fl.sim.toggleEngine();
@@ -444,7 +520,10 @@
     const sim = fl.sim; if (!sim) return;
     sim.autopilot = !sim.autopilot;
     if (sim.autopilot) fl.usedAp = true;
-    $('apCheck').checked = sim.autopilot;
+  };
+  $('btnSound').onclick = () => {
+    save.mute = !save.mute; persist(); Sound.init();
+    $('btnSound').classList.toggle('off', save.mute);
   };
   function hold(el, dir) {
     const on = (e) => { e.preventDefault(); if (fl.sim) fl.sim.turn = dir; el.classList.add('held'); };
@@ -458,7 +537,6 @@
     if (current !== 'flight' || !fl.sim) return;
     if (e.key === 'ArrowLeft') fl.sim.turn = -1;
     else if (e.key === 'ArrowRight') fl.sim.turn = 1;
-    else if (e.key === ' ') $('btnMain').click();
   });
   window.addEventListener('keyup', (e) => {
     if (fl.sim && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) fl.sim.turn = 0;
@@ -468,13 +546,13 @@
   if (inTg) {
     tg.ready(); tg.expand();
     try {
-      if (tg.setHeaderColor) tg.setHeaderColor('#0b1030');
-      if (tg.setBackgroundColor) tg.setBackgroundColor('#0b1030');
+      if (tg.setHeaderColor) tg.setHeaderColor('#08090f');
+      if (tg.setBackgroundColor) tg.setBackgroundColor('#08090f');
       if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
       if (tg.BackButton) tg.BackButton.onClick(back);
     } catch (e) { /* eski Telegram versiyasi */ }
   }
   document.title = T.appName;
   initHome();
-  window.__koinotika = { fl, show, startFlight }; // sinov uchun
+  window.__koinotika = { fl }; // sinov uchun
 })();

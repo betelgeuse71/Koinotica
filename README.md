@@ -14,8 +14,8 @@ Telegram mini-ilovasi (oʻzbek tilida): oʻz raketangizni yasang va koinotga uch
 | `index.html`, `css/style.css` | Ekranlar va koʻrinish |
 | `js/text.js` | Barcha oʻzbekcha matnlar (tahrirlash uchun bitta joy) |
 | `js/physics.js` | Fizika yadrosi, qismlar parametrlari, avtopilot |
-| `js/draw.js` | Raketa va sahnani chizish (vektor grafika) |
-| `js/app.js` | Ekranlar mantigʻi, Telegram WebApp integratsiyasi, saqlash |
+| `js/draw.js` | Raketa, sahna va effektlarni chizish (yassi vektor grafika) |
+| `js/app.js` | Ekranlar mantigʻi, ovoz, Telegram WebApp integratsiyasi, saqlash |
 
 Yigʻish bosqichi yoʻq — oddiy statik sayt.
 
