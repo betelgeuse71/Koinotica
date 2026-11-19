@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1030">
+<title>Koinotika</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+<!-- Bosh sahifa -->
+<section id="home" class="screen active">
+  <canvas id="homeCanvas" class="bg-canvas"></canvas>
+  <div class="home-inner">
+    <div class="logo">🚀</div>
+    <h1>Koinotika</h1>
+    <p id="homeHello" class="sub"></p>
+    <button class="btn primary big" data-go="missions" id="btnMissions"></button>
+    <button class="btn big" id="btnFree"></button>
+    <button class="btn ghost" id="btnHelp"></button>
+  </div>
+</section>
+
+<!-- Vazifalar -->
+<section id="missions" class="screen">
+  <header class="bar"><button class="back" data-back>‹</button><h2 id="missionsTitle"></h2></header>
+  <div id="missionList" class="list"></div>
+</section>
+
+<!-- Angar -->
+<section id="hangar" class="screen">
+  <header class="bar"><button class="back" data-back>‹</button>
+    <div class="bar-text"><h2 id="hangarTitle"></h2><p id="hangarGoal"></p></div>
+  </header>
+  <div class="preview-wrap">
+    <canvas id="previewCanvas"></canvas>
+    <div class="stats">
+      <div class="stat"><span id="lblMass"></span><b id="stMass"></b></div>
+      <div class="stat"><span id="lblTwr"></span><b id="stTwr"></b></div>
+      <div class="stat"><span id="lblDv"></span><b id="stDv"></b></div>
+    </div>
+  </div>
+  <p id="hangarHint" class="hint"></p>
+  <nav id="tabs" class="tabs"></nav>
+  <div id="options" class="options"></div>
+  <div class="launch-row">
+    <label class="switch"><input type="checkbox" id="apCheck" checked><span id="apLabel"></span></label>
+    <button class="btn primary" id="btnToPad"></button>
+  </div>
+</section>
+
+<!-- Parvoz -->
+<section id="flight" class="screen">
+  <canvas id="flightCanvas" class="bg-canvas"></canvas>
+  <div class="hud-top">
+    <button class="back" id="btnAbort">✕</button>
+    <div class="hud-box"><span id="lblAlt"></span><b id="hudAlt">0 m</b></div>
+    <div class="hud-box"><span id="lblSpeed"></span><b id="hudSpeed">0 m/s</b></div>
+    <div class="hud-box fuel"><span id="lblFuel"></span><div class="fuelbar"><i id="hudFuel"></i></div></div>
+  </div>
+  <div class="hud-orbit" id="hudOrbit"><span id="hudAp"></span><span id="hudPe"></span></div>
+  <div id="goalChip" class="goal-chip"></div>
+  <div id="toast" class="toast"></div>
+  <div class="controls">
+    <button class="ctl round" id="btnLeft">⟲</button>
+    <div class="ctl-mid">
+      <div class="ctl-row">
+        <button class="ctl small" id="btnAp"></button>
+        <button class="ctl small" id="btnEngine"></button>
+        <button class="ctl small" id="btnWarp"></button>
+      </div>
+      <button class="ctl main" id="btnMain"></button>
+    </div>
+    <button class="ctl round" id="btnRight">⟳</button>
+  </div>
+</section>
+
+<!-- Oynalar -->
+<div id="modal" class="modal"><div class="modal-card" id="modalCard"></div></div>
+
+<script src="js/physics.js"></script>
+<script src="js/text.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
